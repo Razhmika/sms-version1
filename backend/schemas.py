@@ -20,6 +20,7 @@ class MaterialBase(BaseModel):
     id: str
     name: str
     category: str
+    materialType: Optional[str] = None
     minStock: float
     raw: Optional[float] = None
     process: Optional[float] = None
@@ -30,12 +31,15 @@ class MaterialBase(BaseModel):
     innerDiameter: Optional[float] = None
     outerDiameter: Optional[float] = None
     quantity: Optional[float] = None
+    unit: Optional[str] = "pieces"
 
 class MaterialCreate(MaterialBase):
     pass
 
 class MaterialUpdate(BaseModel):
     name: Optional[str] = None
+    materialType: Optional[str] = None
+    unit: Optional[str] = None
     minStock: Optional[float] = None
     raw: Optional[float] = None
     process: Optional[float] = None

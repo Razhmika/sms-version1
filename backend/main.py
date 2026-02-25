@@ -1,13 +1,30 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 import datetime
+import os
 
-import models, schemas, database, gemini_service
-from database import engine, get_db
+from backend import models, schemas, database, gemini_service
+from backend.database import engine, get_db
+from sqlalchemy import text
 
 models.Base.metadata.create_all(bind=engine)
+
+# Ensure new columns exist in existing sqlite table(s)
+try:
+    with engine.begin() as conn:
+        res = conn.execute(text("PRAGMA table_info('materials')"))
+        cols = [row[1] for row in res.fetchall()]
+        if 'materialType' not in cols:
+            conn.execute(text("ALTER TABLE materials ADD COLUMN materialType TEXT"))
+        if 'unit' not in cols:
+            conn.execute(text("ALTER TABLE materials ADD COLUMN unit TEXT DEFAULT 'pieces'"))
+        conn.execute(text("UPDATE materials SET unit = 'pieces' WHERE unit IS NULL OR TRIM(unit) = ''"))
+except Exception:
+    # If DB isn't sqlite or table missing, skip altering (create_all will create tables)
+    pass
 
 app = FastAPI(title="Advanced Stock Management System")
 
@@ -34,7 +51,9 @@ def create_material(material: schemas.MaterialCreate, db: Session = Depends(get_
     if db_material:
         raise HTTPException(status_code=400, detail="Material ID already exists")
     
-    new_material = models.Material(**material.dict())
+    payload = material.dict()
+    payload["unit"] = "pieces"
+    new_material = models.Material(**payload)
     new_material.lastModified = datetime.datetime.utcnow()
     db.add(new_material)
     db.commit()
@@ -48,6 +67,8 @@ def update_material(material_id: str, material: schemas.MaterialUpdate, db: Sess
         raise HTTPException(status_code=404, detail="Material not found")
     
     update_data = material.dict(exclude_unset=True)
+    if "unit" in update_data:
+        update_data["unit"] = "pieces"
     for key, value in update_data.items():
         setattr(db_material, key, value)
     
@@ -186,9 +207,9 @@ def seed_data(db: Session = Depends(get_db)):
         return {"message": "Data already seeded"}
     
     # Materials
-    m1 = models.Material(id="M-101", name="Stainless Plate X", category="Plate", minStock=50, raw=150, process=20, length=2000, height=10, width=1000)
-    m2 = models.Material(id="M-102", name="Galvanized Pipe A", category="Pipe", minStock=50, raw=45, process=30, diameter=50, length=6000)
-    m3 = models.Material(id="S-301", name="SKF Ball Bearing", category="Standard Item", minStock=100, quantity=750, innerDiameter=25, outerDiameter=52, width=15)
+    m1 = models.Material(id="M-101", name="Stainless Plate X", category="Plate", materialType="Stainless Steel", minStock=50, raw=150, process=20, length=2000, height=10, width=1000, unit="pieces")
+    m2 = models.Material(id="M-102", name="Galvanized Pipe A", category="Pipe", materialType="Galvanized Steel", minStock=50, raw=45, process=30, diameter=50, length=6000, unit="pieces")
+    m3 = models.Material(id="S-301", name="SKF Ball Bearing", category="Standard Item", materialType="Steel", minStock=100, quantity=750, innerDiameter=25, outerDiameter=52, width=15, unit="pieces")
     
     db.add_all([m1, m2, m3])
     
@@ -204,3 +225,9 @@ def seed_data(db: Session = Depends(get_db)):
     
     db.commit()
     return {"message": "Sample data seeded successfully"}
+
+# Mount static app after API routes so /materials, /vendors, /orders, etc. are not shadowed.
+project_root = os.path.dirname(os.path.dirname(__file__))
+static_dir = os.path.join(project_root, "frontend_static")
+if os.path.isdir(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

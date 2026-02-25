@@ -20,6 +20,8 @@ export interface BaseMaterial {
   id: string;
   name: string;
   category: MaterialCategory;
+  materialType?: string;
+  unit?: string;
   lastModified: string;
   minStock: number;
 }

@@ -12,7 +12,7 @@ import { api } from './api';
 const App: React.FC = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [activeTab, setActiveTab] = useState<'inventory' | 'employees' | 'vendorAccounts' | 'vendorOrders'>('inventory');
-    const [activeFilter, setActiveFilter] = useState<string>('all');
+    const [activeFilter, setActiveFilter] = useState<string>('raw');
 
     const [materials, setMaterials] = useState<Material[]>([]);
     const [orders, setOrders] = useState<VendorOrder[]>([]);
@@ -121,11 +121,13 @@ const App: React.FC = () => {
             <main style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
                 {activeTab === 'inventory' && (
                     <>
-                        <Dashboard
-                            materials={materials}
-                            activeFilter={activeFilter}
-                            setActiveFilter={setActiveFilter}
-                        />
+                        <section style={{ margin: '1.25rem 1.25rem 0', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 18, boxShadow: '0 4px 20px rgba(15,23,42,0.05)' }}>
+                            <Dashboard
+                                materials={materials}
+                                activeFilter={activeFilter}
+                                setActiveFilter={setActiveFilter}
+                            />
+                        </section>
                         <StockTracking
                             materials={materials}
                             role={currentUser.role}

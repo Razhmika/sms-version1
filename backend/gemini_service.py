@@ -4,8 +4,8 @@ from typing import List
 import json
 
 # Try to get API key from environment
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "YOUR_API_KEY_HERE")
-genai.configure(api_key=GOOGLE_API_KEY)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyDseSyEpQ03ZQyVH7xsvHonb3R1kcCtpG8")
+genai.configure(api_key="AIzaSyDseSyEpQ03ZQyVH7xsvHonb3R1kcCtpG8")
 
 async def analyze_stock_with_gemini(materials_data: List[dict]) -> str:
     try:

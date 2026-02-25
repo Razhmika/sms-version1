@@ -35,11 +35,13 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
 
     const filteredMaterials = materials.filter(m => {
         const matchesFilter =
-            activeFilter === 'all' ? true :
-                activeFilter === 'raw' ? (m.category !== 'Standard Item' && (m.raw || 0) > 0) :
-                    activeFilter === 'products' ? (m.category !== 'Standard Item' && (m.process || 0) > 0) :
-                        activeFilter === 'standard' ? m.category === 'Standard Item' : true;
-        const matchesSearch = !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.id.toLowerCase().includes(search.toLowerCase());
+            activeFilter === 'raw' ? (m.category !== 'Standard Item') :
+                activeFilter === 'products' ? (m.category !== 'Standard Item') :
+                    activeFilter === 'standard' ? m.category === 'Standard Item' : false;
+        const matchesSearch = !search
+            || m.name.toLowerCase().includes(search.toLowerCase())
+            || m.id.toLowerCase().includes(search.toLowerCase())
+            || (m.materialType || '').toLowerCase().includes(search.toLowerCase());
         return matchesFilter && matchesSearch;
     });
 
@@ -47,14 +49,15 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
         m.category === 'Standard Item' ? m.quantity < m.minStock : (m.raw || 0) < m.minStock || (m.process || 0) < m.minStock;
 
     const handleOpenAdd = () => {
-        setEditingMat({ category: 'Plate', minStock: 0, raw: 0, process: 0 });
+        setEditingMat({ category: 'Plate', materialType: 'MS', unit: 'pieces', minStock: 0, raw: 0, process: 0 });
         setModalMode('add'); setShowModal(true);
     };
     const handleOpenEdit = (m: Material) => { setEditingMat(m); setModalMode('edit'); setShowModal(true); };
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingMat.id || !editingMat.name) return;
-        if (modalMode === 'add') onAdd(editingMat); else onEdit(editingMat);
+        const payload = { ...editingMat, unit: 'pieces' };
+        if (modalMode === 'add') onAdd(payload); else onEdit(payload);
         setShowModal(false);
     };
     const toggleSelect = (id: string) => {
@@ -68,6 +71,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
         'Pipe': { bg: 'rgba(245,158,11,0.1)', text: '#d97706' },
         'Standard Item': { bg: 'rgba(99,102,241,0.1)', text: '#4f46e5' },
     };
+    const tableHeaders = ['Status', 'ID / Name', 'Category', 'Material Type', 'Stock Levels', 'Dimensions', 'Modified'];
 
     return (
         <div style={{ padding: '0 2rem 2rem', fontFamily: "'Inter',sans-serif" }}>
@@ -96,7 +100,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: 0, textTransform: 'capitalize' }}>
-                        {activeFilter === 'all' ? 'All Materials' : activeFilter === 'raw' ? 'Raw Materials' : activeFilter === 'products' ? 'Work In Progress' : 'Standard Components'}
+                        {activeFilter === 'raw' ? 'Raw Materials' : activeFilter === 'products' ? 'Work In Progress' : 'Standard Components'}
                     </h2>
                     <span style={{ background: '#f1f5f9', color: '#64748b', borderRadius: 8, padding: '2px 10px', fontSize: '0.75rem', fontWeight: 700 }}>
                         {filteredMaterials.length} items
@@ -206,7 +210,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                     <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
                             {deleteMode && <th style={{ padding: '0.875rem 1.25rem', width: 48 }}><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? new Set(filteredMaterials.map(m => m.id)) : new Set())} style={{ width: 16, height: 16 }} /></th>}
-                            {['Status', 'ID / Name', 'Category', 'Stock Levels', 'Total Balance', 'Dimensions', 'Modified'].map((h, i) => (
+                            {tableHeaders.map((h, i) => (
                                 <th key={i} style={{ padding: '0.875rem 1.25rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                             {canModify && <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Actions</th>}
@@ -214,7 +218,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                     </thead>
                     <tbody>
                         {filteredMaterials.length === 0 ? (
-                            <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                            <tr><td colSpan={tableHeaders.length + (deleteMode ? 1 : 0) + (canModify ? 1 : 0)} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                                 <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>📦</div>
                                 <div style={{ fontWeight: 600 }}>No materials found</div>
                                 <div style={{ fontSize: '0.8125rem', marginTop: 4 }}>Try adjusting your search or filter</div>
@@ -251,6 +255,9 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         <span style={{ background: cat.bg, color: cat.text, padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700 }}>{m.category}</span>
                                     </td>
+                                    <td style={{ padding: '1rem 1.25rem', fontSize: '0.8125rem', color: '#334155', fontWeight: 600 }}>
+                                        {m.materialType || 'Not set'}
+                                    </td>
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         {m.category === 'Standard Item' ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -262,48 +269,21 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', marginRight: 2 }} />
                                                 <span style={{ fontWeight: 700, fontSize: '0.9rem', color: ((m as any).raw || 0) < m.minStock ? '#ef4444' : '#0f172a' }}>{(m as any).raw || 0}</span>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>kg raw</span>
+                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{m.unit || 'pieces'} raw</span>
                                             </div>
                                         ) : activeFilter === 'products' ? (
                                             /* Show ONLY process count */
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', marginRight: 2 }} />
                                                 <span style={{ fontWeight: 700, fontSize: '0.9rem', color: ((m as any).process || 0) < m.minStock ? '#ef4444' : '#0f172a' }}>{(m as any).process || 0}</span>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>units WIP</span>
+                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{m.unit || 'pieces'} WIP</span>
                                             </div>
                                         ) : (
-                                            /* Show BOTH for 'all' filter */
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem' }}>
-                                                    <span style={{ color: '#3b82f6', fontWeight: 700, minWidth: 32 }}>R:</span>
-                                                    <span style={{ fontWeight: 700, color: ((m as any).raw || 0) < m.minStock ? '#ef4444' : '#0f172a' }}>{(m as any).raw} kg</span>
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem' }}>
-                                                    <span style={{ color: '#f59e0b', fontWeight: 700, minWidth: 32 }}>P:</span>
-                                                    <span style={{ fontWeight: 700, color: ((m as any).process || 0) < m.minStock ? '#ef4444' : '#475569' }}>{(m as any).process} u</span>
-                                                </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{(m as any).raw || 0}</span>
+                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{m.unit || 'pieces'}</span>
                                             </div>
                                         )}
-                                    </td>
-                                    <td style={{ padding: '1rem 1.25rem' }}>
-                                        <span style={{
-                                            display: 'inline-block', padding: '4px 12px', borderRadius: 10,
-                                            background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08))',
-                                            border: '1px solid rgba(99,102,241,0.15)',
-                                            fontWeight: 800, fontSize: '0.875rem', color: '#4f46e5',
-                                        }}>
-                                            {m.category === 'Standard Item'
-                                                ? (m as any).quantity
-                                                : activeFilter === 'raw'
-                                                    ? (m as any).raw || 0
-                                                    : activeFilter === 'products'
-                                                        ? (m as any).process || 0
-                                                        : ((m as any).raw || 0) + ((m as any).process || 0)
-                                            }
-                                            <span style={{ fontWeight: 400, color: '#a5b4fc', fontSize: '0.7rem', marginLeft: 4 }}>
-                                                {m.category === 'Standard Item' ? 'pcs' : activeFilter === 'raw' ? 'kg' : activeFilter === 'products' ? 'u' : 'kg'}
-                                            </span>
-                                        </span>
                                     </td>
                                     <td style={{ padding: '1rem 1.25rem', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
                                         {m.category === 'Plate' && `${m.length}×${m.height}×${m.width}mm`}
@@ -369,6 +349,21 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     </div>
                                 ))}
                                 <div>
+                                    <label style={labelStyle}>Material Type</label>
+                                    <select
+                                        value={(editingMat as any).materialType || 'MS'}
+                                        onChange={e => setEditingMat({ ...editingMat, materialType: e.target.value })}
+                                        style={{ ...inputStyle, background: '#fff', cursor: 'pointer' }}
+                                    >
+                                        {(editingMat as any).materialType && !['MS', 'SS', 'AL'].includes((editingMat as any).materialType) && (
+                                            <option value={(editingMat as any).materialType}>{(editingMat as any).materialType}</option>
+                                        )}
+                                        <option value="MS">MS</option>
+                                        <option value="SS">SS</option>
+                                        <option value="AL">AL</option>
+                                    </select>
+                                </div>
+                                <div>
                                     <label style={labelStyle}>Category</label>
                                     <select
                                         disabled={modalMode === 'edit'}
@@ -422,17 +417,17 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     {editingMat.category !== 'Standard Item' ? (
                                         <>
                                             <div>
-                                                <label style={labelStyle}>Raw Stock (kg)</label>
+                                                <label style={labelStyle}>Raw Stock (pieces)</label>
                                                 <input type="number" value={(editingMat as any).raw || 0} onChange={e => setEditingMat({ ...editingMat, raw: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.2)' }} onFocus={e => { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(59,130,246,0.2)'; e.target.style.boxShadow = 'none'; }} />
                                             </div>
                                             <div>
-                                                <label style={labelStyle}>Production WIP (units)</label>
+                                                <label style={labelStyle}>Production WIP (pieces)</label>
                                                 <input type="number" value={(editingMat as any).process || 0} onChange={e => setEditingMat({ ...editingMat, process: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }} onFocus={e => { e.target.style.borderColor = '#f59e0b'; e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(245,158,11,0.2)'; e.target.style.boxShadow = 'none'; }} />
                                             </div>
                                         </>
                                     ) : (
                                         <div>
-                                            <label style={labelStyle}>Stock Quantity (pcs)</label>
+                                            <label style={labelStyle}>Stock Quantity (pieces)</label>
                                             <input type="number" value={(editingMat as any).quantity || 0} onChange={e => setEditingMat({ ...editingMat, quantity: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)' }} onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(99,102,241,0.2)'; e.target.style.boxShadow = 'none'; }} />
                                         </div>
                                     )}

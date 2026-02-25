@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Enum
-from database import Base
+from backend.database import Base
 import datetime
 import enum
 
@@ -30,6 +30,7 @@ class Material(Base):
     id = Column(String, primary_key=True, index=True)  # Custom ID like M-101
     name = Column(String, index=True)
     category = Column(String)  # 'Plate', 'Pipe', 'Standard Item'
+    materialType = Column(String, nullable=True)  # e.g. Stainless Steel, Iron, Aluminium
     lastModified = Column(DateTime, default=datetime.datetime.utcnow)
     minStock = Column(Float)
     
@@ -47,6 +48,7 @@ class Material(Base):
     
     # Standard Item specific
     quantity = Column(Float, nullable=True)
+    unit = Column(String, default="pieces")
 
 class VendorAccount(Base):
     __tablename__ = "vendors"

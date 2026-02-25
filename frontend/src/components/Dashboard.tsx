@@ -23,16 +23,16 @@ const Dashboard: React.FC<DashboardProps> = ({ materials, activeFilter, setActiv
     ).length;
 
     const stats = [
-        { id: 'raw', label: 'Raw Materials', sublabel: 'Unprocessed stock', value: totalRaw, unit: 'kg', style: STAT_STYLES[0] },
-        { id: 'products', label: 'Work In Progress', sublabel: 'Active production', value: totalProcess, unit: 'units', style: STAT_STYLES[1] },
-        { id: 'standard', label: 'Standard Parts', sublabel: 'Component inventory', value: totalStandard, unit: 'pcs', style: STAT_STYLES[2] },
+        { id: 'raw', label: 'Raw Materials', sublabel: 'Unprocessed stock', value: totalRaw, unit: 'pieces', style: STAT_STYLES[0] },
+        { id: 'products', label: 'Work In Progress', sublabel: 'Active production', value: totalProcess, unit: 'pieces', style: STAT_STYLES[1] },
+        { id: 'standard', label: 'Standard Parts', sublabel: 'Component inventory', value: totalStandard, unit: 'pieces', style: STAT_STYLES[2] },
     ];
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     return (
-        <div style={{ padding: '2rem', fontFamily: "'Inter', sans-serif", background: '#f8fafc' }}>
+        <div style={{ padding: '2rem', fontFamily: "'Inter', sans-serif", background: 'transparent' }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: 16 }}>
                 <div>
@@ -63,18 +63,6 @@ const Dashboard: React.FC<DashboardProps> = ({ materials, activeFilter, setActiv
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.6)' }} />
                         <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#334155' }}>{totalItems} SKUs tracked</span>
                     </div>
-                    <button
-                        onClick={() => setActiveFilter('all')}
-                        style={{
-                            background: activeFilter === 'all' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#fff',
-                            border: '1px solid ' + (activeFilter === 'all' ? 'transparent' : '#e2e8f0'),
-                            borderRadius: 12, padding: '0.5rem 1rem',
-                            color: activeFilter === 'all' ? '#fff' : '#64748b',
-                            fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            boxShadow: activeFilter === 'all' ? '0 4px 12px rgba(99,102,241,0.3)' : '0 1px 3px rgba(0,0,0,0.05)',
-                        }}
-                    >View All</button>
                 </div>
             </div>
 
