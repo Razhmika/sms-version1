@@ -31,6 +31,7 @@ class Material(Base):
     name = Column(String, index=True)
     category = Column(String)  # 'Plate', 'Pipe', 'Standard Item'
     materialType = Column(String, nullable=True)  # e.g. Stainless Steel, Iron, Aluminium
+    productionStatus = Column(String, nullable=True)  # In Process / Done (for production items)
     lastModified = Column(DateTime, default=datetime.datetime.utcnow)
     minStock = Column(Float)
     

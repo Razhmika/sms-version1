@@ -21,6 +21,7 @@ class MaterialBase(BaseModel):
     name: str
     category: str
     materialType: Optional[str] = None
+    productionStatus: Optional[str] = None
     minStock: float
     raw: Optional[float] = None
     process: Optional[float] = None
@@ -39,6 +40,7 @@ class MaterialCreate(MaterialBase):
 class MaterialUpdate(BaseModel):
     name: Optional[str] = None
     materialType: Optional[str] = None
+    productionStatus: Optional[str] = None
     unit: Optional[str] = None
     minStock: Optional[float] = None
     raw: Optional[float] = None
@@ -85,3 +87,4 @@ class VendorOrderResponse(VendorOrderBase):
     id: int
     class Config:
         from_attributes = True
+

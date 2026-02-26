@@ -21,6 +21,7 @@ export interface BaseMaterial {
   name: string;
   category: MaterialCategory;
   materialType?: string;
+  productionStatus?: 'In Process' | 'Done' | string;
   unit?: string;
   lastModified: string;
   minStock: number;

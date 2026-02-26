@@ -21,12 +21,16 @@ try:
             conn.execute(text("ALTER TABLE materials ADD COLUMN materialType TEXT"))
         if 'unit' not in cols:
             conn.execute(text("ALTER TABLE materials ADD COLUMN unit TEXT DEFAULT 'pieces'"))
+        if 'productionStatus' not in cols:
+            conn.execute(text("ALTER TABLE materials ADD COLUMN productionStatus TEXT"))
         conn.execute(text("UPDATE materials SET unit = 'pieces' WHERE unit IS NULL OR TRIM(unit) = ''"))
+        conn.execute(text("UPDATE materials SET productionStatus = 'In Process' WHERE productionStatus IS NULL AND id LIKE 'PR-%'"))
 except Exception:
     # If DB isn't sqlite or table missing, skip altering (create_all will create tables)
     pass
 
 app = FastAPI(title="Advanced Stock Management System")
+ALLOWED_PRODUCTION_STATUS = {"In Process", "Done"}
 
 # Enable CORS for frontend
 app.add_middleware(
@@ -53,6 +57,10 @@ def create_material(material: schemas.MaterialCreate, db: Session = Depends(get_
     
     payload = material.dict()
     payload["unit"] = "pieces"
+    if payload.get("id", "").startswith("PR-") and not payload.get("productionStatus"):
+        payload["productionStatus"] = "In Process"
+    if payload.get("productionStatus") and payload["productionStatus"] not in ALLOWED_PRODUCTION_STATUS:
+        raise HTTPException(status_code=400, detail="Invalid production status")
     new_material = models.Material(**payload)
     new_material.lastModified = datetime.datetime.utcnow()
     db.add(new_material)
@@ -69,6 +77,8 @@ def update_material(material_id: str, material: schemas.MaterialUpdate, db: Sess
     update_data = material.dict(exclude_unset=True)
     if "unit" in update_data:
         update_data["unit"] = "pieces"
+    if update_data.get("productionStatus") and update_data["productionStatus"] not in ALLOWED_PRODUCTION_STATUS:
+        raise HTTPException(status_code=400, detail="Invalid production status")
     for key, value in update_data.items():
         setattr(db_material, key, value)
     
@@ -207,8 +217,8 @@ def seed_data(db: Session = Depends(get_db)):
         return {"message": "Data already seeded"}
     
     # Materials
-    m1 = models.Material(id="M-101", name="Stainless Plate X", category="Plate", materialType="Stainless Steel", minStock=50, raw=150, process=20, length=2000, height=10, width=1000, unit="pieces")
-    m2 = models.Material(id="M-102", name="Galvanized Pipe A", category="Pipe", materialType="Galvanized Steel", minStock=50, raw=45, process=30, diameter=50, length=6000, unit="pieces")
+    m1 = models.Material(id="RM-101", name="Stainless Plate X", category="Plate", materialType="Stainless Steel", minStock=50, raw=150, process=20, length=2000, height=10, width=1000, unit="pieces")
+    m2 = models.Material(id="PR-102", name="Galvanized Pipe A", category="Pipe", materialType="Galvanized Steel", productionStatus="In Process", minStock=50, raw=45, process=30, diameter=50, length=6000, unit="pieces")
     m3 = models.Material(id="S-301", name="SKF Ball Bearing", category="Standard Item", materialType="Steel", minStock=100, quantity=750, innerDiameter=25, outerDiameter=52, width=15, unit="pieces")
     
     db.add_all([m1, m2, m3])

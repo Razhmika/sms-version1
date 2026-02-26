@@ -23,21 +23,47 @@ const labelStyle: React.CSSProperties = {
     color: '#64748b', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em',
 };
 
+const getPrefixByFilter = (filter: string): string => {
+    if (filter === 'raw') return 'RM';
+    if (filter === 'products') return 'PR';
+    return 'SI';
+};
+
+const getNextMaterialId = (materials: Material[], prefix: string): string => {
+    const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+    let maxNo = 0;
+    materials.forEach((m) => {
+        const match = m.id.match(pattern);
+        if (match) {
+            const n = Number(match[1]);
+            if (!Number.isNaN(n) && n > maxNo) maxNo = n;
+        }
+    });
+    return `${prefix}-${String(maxNo + 1).padStart(3, '0')}`;
+};
+
 const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFilter, onAdd, onEdit, onDelete }) => {
     const [showModal, setShowModal] = useState(false);
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [editingMat, setEditingMat] = useState<Partial<Material>>({});
-    const [deleteMode, setDeleteMode] = useState(false);
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [search, setSearch] = useState('');
 
-    const canModify = role === UserRole.StockManager || role === UserRole.Admin;
+    const canAdd = role === UserRole.Manager;
+    const canEditProductionStatus = role === UserRole.Manager || role === UserRole.StockManager;
+    void onDelete;
 
     const filteredMaterials = materials.filter(m => {
+        const isRawByPrefix = m.id.startsWith('RM-');
+        const isProductionByPrefix = m.id.startsWith('PR-');
+        const isStandardByPrefix = m.id.startsWith('SI-');
         const matchesFilter =
-            activeFilter === 'raw' ? (m.category !== 'Standard Item') :
-                activeFilter === 'products' ? (m.category !== 'Standard Item') :
-                    activeFilter === 'standard' ? m.category === 'Standard Item' : false;
+            activeFilter === 'raw'
+                ? (isRawByPrefix || (!isProductionByPrefix && m.category !== 'Standard Item' && (m.raw || 0) > 0))
+                : activeFilter === 'products'
+                    ? (isProductionByPrefix || (m.category !== 'Standard Item' && (m.process || 0) > 0))
+                    : activeFilter === 'standard'
+                        ? (isStandardByPrefix || m.category === 'Standard Item')
+                        : false;
         const matchesSearch = !search
             || m.name.toLowerCase().includes(search.toLowerCase())
             || m.id.toLowerCase().includes(search.toLowerCase())
@@ -49,10 +75,22 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
         m.category === 'Standard Item' ? m.quantity < m.minStock : (m.raw || 0) < m.minStock || (m.process || 0) < m.minStock;
 
     const handleOpenAdd = () => {
-        setEditingMat({ category: 'Plate', materialType: 'MS', unit: 'pieces', minStock: 0, raw: 0, process: 0 });
+        const defaultCategory: MaterialCategory =
+            activeFilter === 'standard' ? 'Standard Item' : 'Plate';
+        const prefix = getPrefixByFilter(activeFilter);
+        setEditingMat({
+            id: getNextMaterialId(materials, prefix),
+            category: defaultCategory,
+            materialType: 'MS',
+            unit: 'pieces',
+            minStock: 0,
+            raw: activeFilter === 'raw' ? 0 : undefined,
+            process: activeFilter === 'products' ? 0 : undefined,
+            productionStatus: activeFilter === 'products' ? 'In Process' : undefined,
+            quantity: activeFilter === 'standard' ? 0 : undefined
+        });
         setModalMode('add'); setShowModal(true);
     };
-    const handleOpenEdit = (m: Material) => { setEditingMat(m); setModalMode('edit'); setShowModal(true); };
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingMat.id || !editingMat.name) return;
@@ -60,18 +98,19 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
         if (modalMode === 'add') onAdd(payload); else onEdit(payload);
         setShowModal(false);
     };
-    const toggleSelect = (id: string) => {
-        const next = new Set(selectedIds);
-        if (next.has(id)) next.delete(id); else next.add(id);
-        setSelectedIds(next);
+    const handleProductionStatusChange = (materialId: string, productionStatus: 'In Process' | 'Done') => {
+        onEdit({ id: materialId, productionStatus });
     };
-
     const categoryColor: Record<string, { bg: string; text: string }> = {
         'Plate': { bg: 'rgba(59,130,246,0.1)', text: '#2563eb' },
         'Pipe': { bg: 'rgba(245,158,11,0.1)', text: '#d97706' },
         'Standard Item': { bg: 'rgba(99,102,241,0.1)', text: '#4f46e5' },
     };
-    const tableHeaders = ['Status', 'ID / Name', 'Category', 'Material Type', 'Stock Levels', 'Dimensions', 'Modified'];
+    const showMaterialTypeColumn = activeFilter !== 'standard';
+    const showProductionStatusColumn = activeFilter === 'products';
+    const tableHeaders = showMaterialTypeColumn
+        ? ['Stock Health', 'ID / Name', 'Category', 'Material Type', ...(showProductionStatusColumn ? ['Production Status'] : []), 'Stock Levels', 'Dimensions', 'Modified']
+        : ['Stock Health', 'ID / Name', 'Category', ...(showProductionStatusColumn ? ['Production Status'] : []), 'Stock Levels', 'Dimensions', 'Modified'];
 
     return (
         <div style={{ padding: '0 2rem 2rem', fontFamily: "'Inter',sans-serif" }}>
@@ -118,88 +157,23 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                             onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
                         />
                     </div>
-                    {canModify && (
-                        <>
-                            {!deleteMode ? (
-                                /* Normal mode — show Delete + Add */
-                                <>
-                                    <button
-                                        onClick={() => setDeleteMode(true)}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                            padding: '0.5625rem 1rem', borderRadius: 10,
-                                            background: '#fff', color: '#64748b',
-                                            fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
-                                            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                                            border: '1px solid #e2e8f0', transition: 'all 0.2s',
-                                        }}
-                                        onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#fca5a5'; (e.currentTarget as HTMLButtonElement).style.color = '#ef4444'; }}
-                                        onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#e2e8f0'; (e.currentTarget as HTMLButtonElement).style.color = '#64748b'; }}
-                                    >
-                                        <ICONS.Trash style={{ width: 14, height: 14 }} />
-                                        Delete
-                                    </button>
-                                    <button
-                                        onClick={handleOpenAdd}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                            padding: '0.5625rem 1.25rem', borderRadius: 10, border: 'none',
-                                            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                            color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer',
-                                            boxShadow: '0 4px 16px rgba(99,102,241,0.3)',
-                                            transition: 'all 0.2s',
-                                        }}
-                                        onMouseOver={e => (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'}
-                                        onMouseOut={e => (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'}
-                                    >
-                                        <ICONS.Plus style={{ width: 14, height: 14 }} />
-                                        Add Material
-                                    </button>
-                                </>
-                            ) : (
-                                /* Delete mode — show Confirm + Cancel */
-                                <>
-                                    <button
-                                        onClick={() => {
-                                            if (selectedIds.size > 0) { onDelete(Array.from(selectedIds)); setSelectedIds(new Set()); }
-                                            setDeleteMode(false);
-                                        }}
-                                        disabled={selectedIds.size === 0}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                            padding: '0.5625rem 1rem', borderRadius: 10, border: 'none',
-                                            background: selectedIds.size > 0 ? 'linear-gradient(135deg, #ef4444, #dc2626)' : '#f1f5f9',
-                                            color: selectedIds.size > 0 ? '#fff' : '#94a3b8',
-                                            fontWeight: 700, fontSize: '0.8125rem',
-                                            cursor: selectedIds.size > 0 ? 'pointer' : 'not-allowed',
-                                            boxShadow: selectedIds.size > 0 ? '0 4px 12px rgba(239,68,68,0.3)' : 'none',
-                                            transition: 'all 0.2s',
-                                        }}
-                                    >
-                                        <ICONS.Trash style={{ width: 14, height: 14 }} />
-                                        {selectedIds.size > 0 ? `Delete (${selectedIds.size})` : 'Select items'}
-                                    </button>
-
-                                    {/* Cancel / Back button */}
-                                    <button
-                                        onClick={() => { setDeleteMode(false); setSelectedIds(new Set()); }}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                            padding: '0.5625rem 1rem', borderRadius: 10,
-                                            background: '#fff', color: '#64748b',
-                                            fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer',
-                                            border: '1px solid #e2e8f0',
-                                            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                                            transition: 'all 0.2s',
-                                        }}
-                                        onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f8fafc'; (e.currentTarget as HTMLButtonElement).style.color = '#0f172a'; }}
-                                        onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.background = '#fff'; (e.currentTarget as HTMLButtonElement).style.color = '#64748b'; }}
-                                    >
-                                        ✕ Cancel
-                                    </button>
-                                </>
-                            )}
-                        </>
+                    {canAdd && (
+                        <button
+                            onClick={handleOpenAdd}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '0.5625rem 1.25rem', borderRadius: 10, border: 'none',
+                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                color: '#fff', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer',
+                                boxShadow: '0 4px 16px rgba(99,102,241,0.3)',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseOver={e => (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'}
+                            onMouseOut={e => (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'}
+                        >
+                            <ICONS.Plus style={{ width: 14, height: 14 }} />
+                            Add Material
+                        </button>
                     )}
                 </div>
             </div>
@@ -209,16 +183,14 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                            {deleteMode && <th style={{ padding: '0.875rem 1.25rem', width: 48 }}><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? new Set(filteredMaterials.map(m => m.id)) : new Set())} style={{ width: 16, height: 16 }} /></th>}
                             {tableHeaders.map((h, i) => (
                                 <th key={i} style={{ padding: '0.875rem 1.25rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
-                            {canModify && <th style={{ padding: '0.875rem 1.25rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
                         {filteredMaterials.length === 0 ? (
-                            <tr><td colSpan={tableHeaders.length + (deleteMode ? 1 : 0) + (canModify ? 1 : 0)} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                            <tr><td colSpan={tableHeaders.length} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                                 <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>📦</div>
                                 <div style={{ fontWeight: 600 }}>No materials found</div>
                                 <div style={{ fontSize: '0.8125rem', marginTop: 4 }}>Try adjusting your search or filter</div>
@@ -231,11 +203,6 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     onMouseOver={e => { (e.currentTarget as HTMLTableRowElement).style.background = low ? 'rgba(239,68,68,0.05)' : '#f8fafc'; }}
                                     onMouseOut={e => { (e.currentTarget as HTMLTableRowElement).style.background = low ? 'rgba(239,68,68,0.02)' : 'transparent'; }}
                                 >
-                                    {deleteMode && (
-                                        <td style={{ padding: '1rem 1.25rem' }}>
-                                            <input type="checkbox" checked={selectedIds.has(m.id)} onChange={() => toggleSelect(m.id)} style={{ width: 16, height: 16, accentColor: '#6366f1' }} />
-                                        </td>
-                                    )}
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         <span style={{
                                             display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -255,9 +222,37 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         <span style={{ background: cat.bg, color: cat.text, padding: '3px 10px', borderRadius: 8, fontSize: '0.75rem', fontWeight: 700 }}>{m.category}</span>
                                     </td>
-                                    <td style={{ padding: '1rem 1.25rem', fontSize: '0.8125rem', color: '#334155', fontWeight: 600 }}>
-                                        {m.materialType || 'Not set'}
-                                    </td>
+                                    {showMaterialTypeColumn && (
+                                        <td style={{ padding: '1rem 1.25rem', fontSize: '0.8125rem', color: '#334155', fontWeight: 600 }}>
+                                            {m.materialType || 'Not set'}
+                                        </td>
+                                    )}
+                                    {showProductionStatusColumn && (
+                                        <td style={{ padding: '1rem 1.25rem' }}>
+                                            {canEditProductionStatus ? (
+                                                <select
+                                                    value={m.productionStatus || 'In Process'}
+                                                    onChange={e => handleProductionStatusChange(m.id, e.target.value as 'In Process' | 'Done')}
+                                                    style={{ ...inputStyle, background: '#fff', minWidth: 140, padding: '0.45rem 0.625rem' }}
+                                                >
+                                                    <option value="In Process">In Process</option>
+                                                    <option value="Done">Done</option>
+                                                </select>
+                                            ) : (
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    padding: '4px 10px',
+                                                    borderRadius: 999,
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 700,
+                                                    color: (m.productionStatus || 'In Process') === 'Done' ? '#166534' : '#92400e',
+                                                    background: (m.productionStatus || 'In Process') === 'Done' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.14)'
+                                                }}>
+                                                    {m.productionStatus || 'In Process'}
+                                                </span>
+                                            )}
+                                        </td>
+                                    )}
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         {m.category === 'Standard Item' ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -293,18 +288,6 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     <td style={{ padding: '1rem 1.25rem', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
                                         {m.lastModified ? new Date(m.lastModified).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                                     </td>
-                                    {canModify && (
-                                        <td style={{ padding: '1rem 1.25rem' }}>
-                                            <button
-                                                onClick={() => handleOpenEdit(m)}
-                                                style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', transition: 'all 0.2s' }}
-                                                onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.background = '#6366f1'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#6366f1'; }}
-                                                onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.background = '#fff'; (e.currentTarget as HTMLButtonElement).style.color = '#64748b'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#e2e8f0'; }}
-                                            >
-                                                <ICONS.Edit style={{ width: 14, height: 14 }} />
-                                            </button>
-                                        </td>
-                                    )}
                                 </tr>
                             );
                         })}
@@ -330,7 +313,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                 <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>Basic Information</div>
                                 {[
-                                    { label: 'Stock ID', key: 'id', type: 'text', placeholder: 'e.g. M-999', disabled: modalMode === 'edit' },
+                                    { label: 'Stock ID', key: 'id', type: 'text', placeholder: 'Auto generated', disabled: true },
                                     { label: 'Material Name', key: 'name', type: 'text', placeholder: 'Full material description' },
                                     { label: 'Min. Stock Threshold', key: 'minStock', type: 'number', placeholder: '0' },
                                 ].map(field => (
@@ -416,18 +399,35 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
                                     {editingMat.category !== 'Standard Item' ? (
                                         <>
-                                            <div>
-                                                <label style={labelStyle}>Raw Stock (pieces)</label>
-                                                <input type="number" value={(editingMat as any).raw || 0} onChange={e => setEditingMat({ ...editingMat, raw: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.2)' }} onFocus={e => { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(59,130,246,0.2)'; e.target.style.boxShadow = 'none'; }} />
-                                            </div>
-                                            <div>
-                                                <label style={labelStyle}>Production WIP (pieces)</label>
-                                                <input type="number" value={(editingMat as any).process || 0} onChange={e => setEditingMat({ ...editingMat, process: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }} onFocus={e => { e.target.style.borderColor = '#f59e0b'; e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(245,158,11,0.2)'; e.target.style.boxShadow = 'none'; }} />
-                                            </div>
+                                            {activeFilter === 'raw' && (
+                                                <div>
+                                                    <label style={labelStyle}>Raw Stock (pieces)</label>
+                                                    <input type="number" value={(editingMat as any).raw || 0} onChange={e => setEditingMat({ ...editingMat, raw: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.2)' }} onFocus={e => { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(59,130,246,0.2)'; e.target.style.boxShadow = 'none'; }} />
+                                                </div>
+                                            )}
+                                            {activeFilter === 'products' && (
+                                                <>
+                                                    <div>
+                                                        <label style={labelStyle}>Production WIP (pieces)</label>
+                                                        <input type="number" value={(editingMat as any).process || 0} onChange={e => setEditingMat({ ...editingMat, process: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }} onFocus={e => { e.target.style.borderColor = '#f59e0b'; e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(245,158,11,0.2)'; e.target.style.boxShadow = 'none'; }} />
+                                                    </div>
+                                                    <div>
+                                                        <label style={labelStyle}>Production Status</label>
+                                                        <select
+                                                            value={(editingMat as any).productionStatus || 'In Process'}
+                                                            onChange={e => setEditingMat({ ...editingMat, productionStatus: e.target.value } as any)}
+                                                            style={{ ...inputStyle, background: '#fff', cursor: 'pointer' }}
+                                                        >
+                                                            <option value="In Process">In Process</option>
+                                                            <option value="Done">Done</option>
+                                                        </select>
+                                                    </div>
+                                                </>
+                                            )}
                                         </>
                                     ) : (
                                         <div>
-                                            <label style={labelStyle}>Stock Quantity (pieces)</label>
+                                            <label style={labelStyle}>Standard Stocks (pieces)</label>
                                             <input type="number" value={(editingMat as any).quantity || 0} onChange={e => setEditingMat({ ...editingMat, quantity: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)' }} onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(99,102,241,0.2)'; e.target.style.boxShadow = 'none'; }} />
                                         </div>
                                     )}
@@ -451,3 +451,4 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
 };
 
 export default StockTracking;
+
