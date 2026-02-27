@@ -32,7 +32,8 @@ export interface PlateMaterial extends BaseMaterial {
   raw: number;
   process: number;
   length: number;
-  height: number;
+  breadth: number;
+  height?: number;
   width: number;
 }
 

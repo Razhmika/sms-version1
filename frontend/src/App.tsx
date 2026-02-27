@@ -40,7 +40,13 @@ const App: React.FC = () => {
             api.fetchVendors(),
             api.fetchEmployees()
         ]);
-        setMaterials(mats);
+        setMaterials(
+            mats.map((m: any) =>
+                m.category === 'Plate'
+                    ? { ...m, breadth: m.breadth ?? m.height ?? 0 }
+                    : m
+            )
+        );
         setOrders(ords);
         setVendors(vends);
         setEmployees(emps);

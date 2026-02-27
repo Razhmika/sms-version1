@@ -47,10 +47,15 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [editingMat, setEditingMat] = useState<Partial<Material>>({});
     const [search, setSearch] = useState('');
+    const [stockAdjustment, setStockAdjustment] = useState({ checkIn: 0, checkOut: 0 });
+    const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
 
-    const canAdd = role === UserRole.Manager;
+    const canManageInventory = role === UserRole.Manager || role === UserRole.StockManager;
+    const canAdd = canManageInventory;
     const canEditProductionStatus = role === UserRole.Manager || role === UserRole.StockManager;
-    void onDelete;
+    const isStockManager = role === UserRole.StockManager;
+    const canDeleteMaterial = role === UserRole.StockManager;
+    const useStockAdjustmentOnly = modalMode === 'edit' && isStockManager;
 
     const filteredMaterials = materials.filter(m => {
         const isRawByPrefix = m.id.startsWith('RM-');
@@ -70,6 +75,10 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
             || (m.materialType || '').toLowerCase().includes(search.toLowerCase());
         return matchesFilter && matchesSearch;
     });
+    const filteredMaterialIds = filteredMaterials.map((m) => m.id);
+    const selectedVisibleCount = selectedMaterialIds.filter((id) => filteredMaterialIds.includes(id)).length;
+    const selectedVisibleIds = selectedMaterialIds.filter((id) => filteredMaterialIds.includes(id));
+    const areAllVisibleSelected = filteredMaterialIds.length > 0 && selectedVisibleCount === filteredMaterialIds.length;
 
     const isLowStock = (m: Material) =>
         m.category === 'Standard Item' ? m.quantity < m.minStock : (m.raw || 0) < m.minStock || (m.process || 0) < m.minStock;
@@ -89,14 +98,55 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
             productionStatus: activeFilter === 'products' ? 'In Process' : undefined,
             quantity: activeFilter === 'standard' ? 0 : undefined
         });
+        setStockAdjustment({ checkIn: 0, checkOut: 0 });
         setModalMode('add'); setShowModal(true);
+    };
+    const getEditableStockField = (mat: Partial<Material>): 'raw' | 'process' | 'quantity' => {
+        if (mat.category === 'Standard Item' || activeFilter === 'standard') return 'quantity';
+        return activeFilter === 'products' ? 'process' : 'raw';
     };
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingMat.id || !editingMat.name) return;
-        const payload = { ...editingMat, unit: 'pieces' };
+        const payload: any = { ...editingMat, unit: 'pieces' };
+        if (payload.category === 'Plate') {
+            payload.height = payload.breadth ?? payload.height ?? 0;
+        }
+        if (modalMode === 'edit' && isStockManager) {
+            const stockField = getEditableStockField(editingMat);
+            const currentStock = Number((editingMat as any)[stockField] || 0);
+            const nextStock = Math.max(0, currentStock + stockAdjustment.checkIn - stockAdjustment.checkOut);
+            payload[stockField] = nextStock;
+        }
         if (modalMode === 'add') onAdd(payload); else onEdit(payload);
         setShowModal(false);
+        setStockAdjustment({ checkIn: 0, checkOut: 0 });
+    };
+    const handleOpenEdit = (material: Material) => {
+        const normalizedMaterial = material.category === 'Plate'
+            ? { ...material, breadth: (material as any).breadth ?? (material as any).height ?? 0 }
+            : material;
+        setEditingMat({ ...normalizedMaterial });
+        setStockAdjustment({ checkIn: 0, checkOut: 0 });
+        setModalMode('edit');
+        setShowModal(true);
+    };
+    const handleToggleMaterialSelection = (materialId: string) => {
+        setSelectedMaterialIds((prev) =>
+            prev.includes(materialId) ? prev.filter((id) => id !== materialId) : [...prev, materialId]
+        );
+    };
+    const handleToggleSelectAllVisible = () => {
+        if (areAllVisibleSelected) {
+            setSelectedMaterialIds((prev) => prev.filter((id) => !filteredMaterialIds.includes(id)));
+            return;
+        }
+        setSelectedMaterialIds((prev) => Array.from(new Set([...prev, ...filteredMaterialIds])));
+    };
+    const handleDeleteSelected = () => {
+        if (selectedVisibleIds.length === 0) return;
+        onDelete(selectedVisibleIds);
+        setSelectedMaterialIds((prev) => prev.filter((id) => !selectedVisibleIds.includes(id)));
     };
     const handleProductionStatusChange = (materialId: string, productionStatus: 'In Process' | 'Done') => {
         onEdit({ id: materialId, productionStatus });
@@ -111,6 +161,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
     const tableHeaders = showMaterialTypeColumn
         ? ['Stock Health', 'ID / Name', 'Category', 'Material Type', ...(showProductionStatusColumn ? ['Production Status'] : []), 'Stock Levels', 'Dimensions', 'Modified']
         : ['Stock Health', 'ID / Name', 'Category', ...(showProductionStatusColumn ? ['Production Status'] : []), 'Stock Levels', 'Dimensions', 'Modified'];
+    const tableColumnCount = tableHeaders.length + (canDeleteMaterial ? 1 : 0);
 
     return (
         <div style={{ padding: '0 2rem 2rem', fontFamily: "'Inter',sans-serif" }}>
@@ -175,6 +226,24 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                             Add Material
                         </button>
                     )}
+                    {canDeleteMaterial && (
+                        <button
+                            onClick={handleDeleteSelected}
+                            disabled={selectedVisibleCount === 0}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '0.5625rem 1.25rem', borderRadius: 10,
+                                border: '1px solid rgba(239,68,68,0.25)',
+                                background: selectedVisibleCount === 0 ? '#f1f5f9' : 'rgba(239,68,68,0.1)',
+                                color: selectedVisibleCount === 0 ? '#94a3b8' : '#dc2626',
+                                fontWeight: 700, fontSize: '0.8125rem',
+                                cursor: selectedVisibleCount === 0 ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            Delete Selected
+                            {selectedVisibleCount > 0 && ` (${selectedVisibleCount})`}
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -183,6 +252,15 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                            {canDeleteMaterial && (
+                                <th style={{ padding: '0.875rem 1.25rem', width: 40 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={areAllVisibleSelected}
+                                        onChange={handleToggleSelectAllVisible}
+                                    />
+                                </th>
+                            )}
                             {tableHeaders.map((h, i) => (
                                 <th key={i} style={{ padding: '0.875rem 1.25rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
@@ -190,7 +268,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                     </thead>
                     <tbody>
                         {filteredMaterials.length === 0 ? (
-                            <tr><td colSpan={tableHeaders.length} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                            <tr><td colSpan={tableColumnCount} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                                 <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>📦</div>
                                 <div style={{ fontWeight: 600 }}>No materials found</div>
                                 <div style={{ fontSize: '0.8125rem', marginTop: 4 }}>Try adjusting your search or filter</div>
@@ -203,6 +281,15 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     onMouseOver={e => { (e.currentTarget as HTMLTableRowElement).style.background = low ? 'rgba(239,68,68,0.05)' : '#f8fafc'; }}
                                     onMouseOut={e => { (e.currentTarget as HTMLTableRowElement).style.background = low ? 'rgba(239,68,68,0.02)' : 'transparent'; }}
                                 >
+                                    {canDeleteMaterial && (
+                                        <td style={{ padding: '1rem 1.25rem' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedMaterialIds.includes(m.id)}
+                                                onChange={() => handleToggleMaterialSelection(m.id)}
+                                            />
+                                        </td>
+                                    )}
                                     <td style={{ padding: '1rem 1.25rem' }}>
                                         <span style={{
                                             display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -281,12 +368,36 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                         )}
                                     </td>
                                     <td style={{ padding: '1rem 1.25rem', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                        {m.category === 'Plate' && `${m.length}×${m.height}×${m.width}mm`}
+                                        {m.category === 'Plate' && `${m.length}×${((m as any).breadth ?? (m as any).height ?? 0)}×${m.width}mm`}
                                         {m.category === 'Pipe' && `Ø${m.diameter}×${m.length}mm`}
                                         {m.category === 'Standard Item' && `ID:${m.innerDiameter} OD:${m.outerDiameter}`}
                                     </td>
                                     <td style={{ padding: '1rem 1.25rem', fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                                        {m.lastModified ? new Date(m.lastModified).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                        {m.lastModified ? new Date(m.lastModified).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                        {canManageInventory && (
+                                            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                                                {canManageInventory && (
+                                                    <button
+                                                        onClick={() => handleOpenEdit(m)}
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            padding: '0.35rem 0.7rem',
+                                                            borderRadius: 8,
+                                                            border: '1px solid #cbd5e1',
+                                                            background: '#fff',
+                                                            color: '#334155',
+                                                            fontWeight: 700,
+                                                            fontSize: '0.7rem',
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             );
@@ -367,7 +478,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
 
                                 {editingMat.category === 'Plate' && (
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                                        {[['Length (mm)', 'length'], ['Height (mm)', 'height'], ['Width (mm)', 'width']].map(([lbl, k]) => (
+                                        {[['Length (mm)', 'length'], ['Breadth (mm)', 'breadth'], ['Width (mm)', 'width']].map(([lbl, k]) => (
                                             <div key={k}>
                                                 <label style={{ ...labelStyle, fontSize: '0.65rem' }}>{lbl}</label>
                                                 <input type="number" value={(editingMat as any)[k] || 0} onChange={e => setEditingMat({ ...editingMat, [k]: Number(e.target.value) } as any)} style={{ ...inputStyle, background: '#fff', padding: '0.5rem' }} />
@@ -397,19 +508,43 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                 )}
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+                                    {modalMode === 'edit' && isStockManager && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <div>
+                                                <label style={labelStyle}>Check In (pieces)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={stockAdjustment.checkIn}
+                                                    onChange={e => setStockAdjustment(prev => ({ ...prev, checkIn: Number(e.target.value) || 0 }))}
+                                                    style={{ ...inputStyle, background: 'rgba(34,197,94,0.04)', border: '1px solid rgba(34,197,94,0.25)' }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Check Out (pieces)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={stockAdjustment.checkOut}
+                                                    onChange={e => setStockAdjustment(prev => ({ ...prev, checkOut: Number(e.target.value) || 0 }))}
+                                                    style={{ ...inputStyle, background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.25)' }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                     {editingMat.category !== 'Standard Item' ? (
                                         <>
                                             {activeFilter === 'raw' && (
                                                 <div>
                                                     <label style={labelStyle}>Raw Stock (pieces)</label>
-                                                    <input type="number" value={(editingMat as any).raw || 0} onChange={e => setEditingMat({ ...editingMat, raw: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.2)' }} onFocus={e => { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(59,130,246,0.2)'; e.target.style.boxShadow = 'none'; }} />
+                                                    <input type="number" disabled={useStockAdjustmentOnly} value={(editingMat as any).raw || 0} onChange={e => setEditingMat({ ...editingMat, raw: Number(e.target.value) } as any)} style={{ ...inputStyle, background: useStockAdjustmentOnly ? '#f1f5f9' : 'rgba(59,130,246,0.04)', border: useStockAdjustmentOnly ? '1px solid #e2e8f0' : '1px solid rgba(59,130,246,0.2)', color: useStockAdjustmentOnly ? '#94a3b8' : '#0f172a' }} onFocus={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = '#3b82f6'; e.target.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'; } }} onBlur={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = 'rgba(59,130,246,0.2)'; e.target.style.boxShadow = 'none'; } }} />
                                                 </div>
                                             )}
                                             {activeFilter === 'products' && (
                                                 <>
                                                     <div>
                                                         <label style={labelStyle}>Production WIP (pieces)</label>
-                                                        <input type="number" value={(editingMat as any).process || 0} onChange={e => setEditingMat({ ...editingMat, process: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }} onFocus={e => { e.target.style.borderColor = '#f59e0b'; e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(245,158,11,0.2)'; e.target.style.boxShadow = 'none'; }} />
+                                                        <input type="number" disabled={useStockAdjustmentOnly} value={(editingMat as any).process || 0} onChange={e => setEditingMat({ ...editingMat, process: Number(e.target.value) } as any)} style={{ ...inputStyle, background: useStockAdjustmentOnly ? '#f1f5f9' : 'rgba(245,158,11,0.04)', border: useStockAdjustmentOnly ? '1px solid #e2e8f0' : '1px solid rgba(245,158,11,0.2)', color: useStockAdjustmentOnly ? '#94a3b8' : '#0f172a' }} onFocus={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = '#f59e0b'; e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.1)'; } }} onBlur={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = 'rgba(245,158,11,0.2)'; e.target.style.boxShadow = 'none'; } }} />
                                                     </div>
                                                     <div>
                                                         <label style={labelStyle}>Production Status</label>
@@ -428,7 +563,7 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
                                     ) : (
                                         <div>
                                             <label style={labelStyle}>Standard Stocks (pieces)</label>
-                                            <input type="number" value={(editingMat as any).quantity || 0} onChange={e => setEditingMat({ ...editingMat, quantity: Number(e.target.value) } as any)} style={{ ...inputStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)' }} onFocus={e => { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)'; }} onBlur={e => { e.target.style.borderColor = 'rgba(99,102,241,0.2)'; e.target.style.boxShadow = 'none'; }} />
+                                            <input type="number" disabled={useStockAdjustmentOnly} value={(editingMat as any).quantity || 0} onChange={e => setEditingMat({ ...editingMat, quantity: Number(e.target.value) } as any)} style={{ ...inputStyle, background: useStockAdjustmentOnly ? '#f1f5f9' : 'rgba(99,102,241,0.04)', border: useStockAdjustmentOnly ? '1px solid #e2e8f0' : '1px solid rgba(99,102,241,0.2)', color: useStockAdjustmentOnly ? '#94a3b8' : '#0f172a' }} onFocus={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = '#6366f1'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)'; } }} onBlur={e => { if (!useStockAdjustmentOnly) { e.target.style.borderColor = 'rgba(99,102,241,0.2)'; e.target.style.boxShadow = 'none'; } }} />
                                         </div>
                                     )}
                                 </div>
@@ -451,4 +586,5 @@ const StockTracking: React.FC<StockTrackingProps> = ({ materials, role, activeFi
 };
 
 export default StockTracking;
+
 
